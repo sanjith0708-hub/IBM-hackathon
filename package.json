@@ -1,0 +1,12 @@
+{
+  "name": "axios-pr-reviewer",
+  "version": "1.0.0",
+  "description": "Live PR review tool for the axios repository",
+  "main": "server.cjs",
+  "scripts": {
+    "start": "node server.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

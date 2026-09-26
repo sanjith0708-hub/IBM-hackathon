@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Axios PR Reviewer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Animated gradient background ── */
+    @keyframes gradShift {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    body {
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 16px 64px;
+      position: relative;
+      overflow-x: hidden;
+
+      /* Slow-moving 5-stop gradient covering deep navy → charcoal → dark purple tones */
+      background: linear-gradient(
+        135deg,
+        #0d1117 0%,
+        #0d1b2e 20%,
+        #10111f 40%,
+        #130d1f 60%,
+        #0b1620 80%,
+        #0d1117 100%
+      );
+      background-size: 300% 300%;
+      animation: gradShift 18s ease infinite;
+    }
+
+    /* ── Soft fixed glow blobs (CSS, no JS) ── */
+    body::before,
+    body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 0;
+      filter: blur(90px);
+    }
+    body::before {
+      width: 600px; height: 600px;
+      top: -120px; left: -160px;
+      background: radial-gradient(circle, rgba(56,139,253,0.12) 0%, transparent 70%);
+      animation: blobA 22s ease-in-out infinite alternate;
+    }
+    body::after {
+      width: 500px; height: 500px;
+      bottom: -100px; right: -140px;
+      background: radial-gradient(circle, rgba(130,80,255,0.10) 0%, transparent 70%);
+      animation: blobB 26s ease-in-out infinite alternate;
+    }
+    @keyframes blobA {
+      0%   { transform: translate(0, 0) scale(1); }
+      50%  { transform: translate(80px, 60px) scale(1.1); }
+      100% { transform: translate(20px, 100px) scale(0.95); }
+    }
+    @keyframes blobB {
+      0%   { transform: translate(0, 0) scale(1); }
+      50%  { transform: translate(-60px, -50px) scale(1.08); }
+      100% { transform: translate(-30px, -90px) scale(0.97); }
+    }
+
+    /* Everything above the background */
+    header, .card { position: relative; z-index: 1; }
+
+    header { text-align: center; margin-bottom: 36px; }
+    header h1 {
+      font-size: 22px; font-weight: 600; letter-spacing: -0.3px; color: #e6edf3;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+    }
+    header p  { margin-top: 6px; color: #8b949e; font-size: 14px; }
+
+    /* ── Logo icon ── */
+    .logo-icon {
+      flex-shrink: 0;
+      filter: drop-shadow(0 0 6px rgba(56,139,253,0.5));
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 28px 32px;
+      width: 100%;
+      max-width: 760px;
+    }
+
+    .input-row { display: flex; gap: 10px; }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 9px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #e6edf3;
+      background: #0d1117;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus {
+      border-color: #388bfd;
+      box-shadow: 0 0 0 3px rgba(56,139,253,0.15);
+    }
+    input[type="text"]::placeholder { color: #484f58; }
+
+    button {
+      padding: 9px 22px;
+      background: #238636;
+      color: #ffffff;
+      border: 1px solid #2ea043;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    button:hover    { background: #2ea043; }
+    button:active   { background: #196c2e; }
+    button:disabled { background: #21262d; color: #8b949e; border-color: #30363d; cursor: not-allowed; }
+
+    /* ── Results ── */
+    #results { margin-top: 28px; display: none; }
+    #results.visible { display: block; }
+
+    .divider { border: none; border-top: 1px solid #21262d; margin-bottom: 0; }
+
+    /* ── Tabs ── */
+    .tab-bar {
+      display: flex;
+      margin: 18px 0 0;
+      border-bottom: 1px solid #30363d;
+    }
+    .tab-btn {
+      padding: 8px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #8b949e;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      cursor: pointer;
+      border-radius: 0;
+      transition: color 0.12s, border-color 0.12s;
+    }
+    .tab-btn:hover   { color: #e6edf3; background: none; }
+    .tab-btn:active  { background: none; }
+    .tab-btn.active  {
+      color: #e6edf3;
+      font-weight: 600;
+      border-bottom-color: #f78166;
+    }
+
+    .tab-panel { display: none; padding-top: 22px; }
+    .tab-panel.active { display: block; }
+
+    /* ── Status / spinner ── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #8b949e;
+      margin-bottom: 18px;
+      padding-top: 20px;
+    }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid #30363d;
+      border-top-color: #388bfd;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Pill (cached / live) ── */
+    .cached-pill {
+      margin-left: auto;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: #1f3a5f;
+      color: #79c0ff;
+      border: 1px solid #1f6feb;
+    }
+
+    /* ── Meta row ── */
+    .review-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 20px;
+      margin-bottom: 4px;
+      font-size: 13px;
+      color: #8b949e;
+    }
+    .review-meta strong { color: #e6edf3; }
+    .review-meta a { color: #79c0ff; text-decoration: none; }
+    .review-meta a:hover { text-decoration: underline; }
+
+    /* ── Sections ── */
+    .section { margin-bottom: 24px; }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #21262d;
+    }
+    .section h3 {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #c9d1d9;
+    }
+    .section-body {
+      font-size: 14px;
+      color: #c9d1d9;
+    }
+    .section-body ul  { padding-left: 20px; }
+    .section-body li  { margin-bottom: 6px; }
+    .section-body p   { margin-bottom: 8px; }
+    .section-body p:last-child { margin-bottom: 0; }
+    .section-body strong { color: #e6edf3; font-weight: 600; }
+    .section-body em     { color: #c9d1d9; font-style: italic; }
+    .section-body code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: #ff7b72;
+    }
+    .section-body h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e6edf3;
+      margin: 12px 0 4px;
+    }
+
+    /* ── Summary box ── */
+    .summary-box {
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-size: 14px;
+      color: #c9d1d9;
+      word-break: break-word;
+    }
+    .summary-box p   { margin-bottom: 6px; }
+    .summary-box p:last-child { margin-bottom: 0; }
+    .summary-box strong { color: #e6edf3; }
+    .summary-box code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: #ff7b72;
+    }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-ok     { background: #1a4a1f; color: #3fb950; border: 1px solid #238636; }
+    .badge-warn   { background: #3d2a00; color: #e3b341; border: 1px solid #9e6a03; }
+    .badge-danger { background: #4a1515; color: #f78166; border: 1px solid #da3633; }
+
+    /* ── Assessment pill ── */
+    .assessment-pill {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .pill-approve  { background: #1a4a1f; color: #3fb950; border: 1px solid #238636; }
+    .pill-changes  { background: #4a1515; color: #f78166; border: 1px solid #da3633; }
+    .pill-discuss  { background: #3d2a00; color: #e3b341; border: 1px solid #9e6a03; }
+
+    /* ── Files changed toggle ── */
+    details { margin-top: 8px; }
+    summary {
+      font-size: 13px;
+      color: #79c0ff;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }
+    summary::before { content: '▶ '; font-size: 10px; }
+    details[open] summary::before { content: '▼ '; }
+    details ul { margin-top: 6px; padding-left: 18px; font-size: 13px; color: #8b949e; }
+
+    /* ── Code fix blocks ── */
+    .code-fix-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #8b949e;
+      margin: 12px 0 5px;
+    }
+    .code-block {
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12.5px;
+      line-height: 1.6;
+      white-space: pre;
+      overflow-x: auto;
+      color: #c9d1d9;
+    }
+
+    /* ── Suggestion items ── */
+    .suggestion-item {
+      margin-bottom: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #21262d;
+    }
+    .suggestion-item:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+    .suggestion-text { color: #c9d1d9; font-size: 14px; display: block; margin-bottom: 2px; }
+    .suggestion-text code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: #ff7b72;
+    }
+
+    /* ── Vote buttons ── */
+    .vote-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid #21262d;
+    }
+    .vote-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      font-size: 12px;
+      background: #21262d;
+      color: #8b949e;
+      border: 1px solid #30363d;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s, border-color 0.12s;
+      line-height: 1.4;
+    }
+    .vote-btn:hover { background: #2d333b; color: #e6edf3; border-color: #484f58; }
+    .vote-btn.voted-up   { background: #1a4a1f; color: #3fb950; border-color: #238636; }
+    .vote-btn.voted-down { background: #4a1515; color: #f78166; border-color: #da3633; }
+    .vote-tally { font-size: 11px; color: #484f58; margin-left: 2px; }
+
+    /* ── Copy button ── */
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 11px;
+      font-size: 12px;
+      background: #21262d;
+      color: #8b949e;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      margin-left: auto;
+      white-space: nowrap;
+    }
+    .copy-btn:hover { background: #2d333b; color: #e6edf3; }
+    .copy-btn.copied { background: #1a4a1f; color: #3fb950; border-color: #238636; }
+
+    /* ── Error ── */
+    .error-msg {
+      font-size: 14px;
+      color: #f78166;
+      padding: 12px 16px;
+      background: #3d0c0c;
+      border: 1px solid #da3633;
+      border-radius: 6px;
+      margin-top: 16px;
+    }
+    .error-msg code { color: #ff7b72; background: #1c2128; padding: 1px 5px; border-radius: 3px; }
+
+    /* ── How to Use ── */
+    .how-to-use {
+      width: 100%;
+      max-width: 760px;
+      margin-bottom: 24px;
+      position: relative;
+      z-index: 1;
+    }
+    .how-to-use ol {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      list-style: none;
+      counter-reset: steps;
+    }
+    @media (max-width: 520px) {
+      .how-to-use ol { grid-template-columns: 1fr; }
+    }
+    .how-to-use li {
+      counter-increment: steps;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 11px 14px;
+      font-size: 13px;
+      color: #8b949e;
+      line-height: 1.5;
+    }
+    .how-to-use li::before {
+      content: counter(steps);
+      flex-shrink: 0;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: #1f3a5f;
+      border: 1px solid #388bfd;
+      color: #79c0ff;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+    .how-to-use li strong { color: #c9d1d9; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>
+      <!-- Shield + checkmark logo -->
+      <svg class="logo-icon" width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- Shield body -->
+        <path d="M16 2L4 7v8c0 6.627 5.144 11.956 12 13 6.856-1.044 12-6.373 12-13V7L16 2Z"
+              fill="#1f3a5f" stroke="#388bfd" stroke-width="1.5" stroke-linejoin="round"/>
+        <!-- Checkmark -->
+        <path d="M10.5 16l3.5 3.5 7-7" stroke="#58a6ff" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Top accent line (code angle brackets) -->
+        <path d="M12 10l-2.5 2 2.5 2M20 10l2.5 2-2.5 2" stroke="#388bfd" stroke-width="1.2"
+              stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+      </svg>
+      Axios PR Reviewer
+    </h1>
+    <p>Paste any public GitHub PR link. Fresh PRs are fetched and reviewed live; previously reviewed PRs are served from cache.</p>
+  </header>
+
+  <div class="how-to-use" aria-label="How to use">
+    <ol>
+      <li><strong>Paste</strong> any public GitHub PR URL into the input box above.</li>
+      <li><strong>Click Review</strong> — fresh PRs are fetched live from GitHub and cached for next time.</li>
+      <li><strong>Review tab</strong> — security risks, missing tests, breaking changes &amp; verdict. <strong>Code Suggestions tab</strong> — actionable fixes with code blocks.</li>
+      <li><strong>Speed up reviews</strong> — use the findings as a checklist before approving or requesting changes.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <div class="input-row">
+      <input
+        type="text"
+        id="prInput"
+        placeholder="https://github.com/axios/axios/pull/6402"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button id="reviewBtn" onclick="runReview()">Review</button>
+    </div>
+
+    <div id="results">
+      <hr class="divider" />
+      <div id="tabBar" class="tab-bar" style="display:none">
+        <button class="tab-btn active" onclick="switchTab('review', this)">Review</button>
+        <button class="tab-btn"        onclick="switchTab('suggestions', this)">Code Suggestions</button>
+      </div>
+      <div id="resultsBody"></div>
+      <div id="tabReview"      class="tab-panel active"></div>
+      <div id="tabSuggestions" class="tab-panel"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = '/api/review';
+
+    /* ── Helpers ─────────────────────────────────────────────────────────────── */
+
+    function parseMeta(lines, key) {
+      const line = lines.find(l => l.startsWith(`**${key}:**`));
+      return line ? line.replace(`**${key}:**`, '').trim() : '';
+    }
+
+    function getSection(md, heading) {
+      const re = new RegExp(`## ${heading}\\s+([\\s\\S]*?)(?=\\n## |$)`, 'i');
+      const m  = md.match(re);
+      return m ? m[1].trim() : '';
+    }
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    /* ── Minimal markdown → HTML renderer ───────────────────────────────────── */
+    // Handles: fenced code blocks, ### headings, **bold**, *italic*, `inline code`,
+    // bullet lists (- / *), numbered lists, blank-line paragraphs.
+    function mdToHtml(text) {
+      if (!text || !text.trim()) return '<p>—</p>';
+
+      const lines  = text.split('\n');
+      const out    = [];
+      let inList   = false;   // unordered
+      let inOList  = false;   // ordered
+      let inFence  = false;
+      let fenceLang = '';
+      let fenceBuf  = [];
+
+      const closeLists = () => {
+        if (inList)  { out.push('</ul>'); inList  = false; }
+        if (inOList) { out.push('</ol>'); inOList = false; }
+      };
+
+      const inlineEsc = (s) => {
+        // escape HTML first, then apply inline rules
+        s = esc(s);
+        s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        s = s.replace(/\*(.+?)\*/g,     '<em>$1</em>');
+        s = s.replace(/`([^`]+)`/g,     '<code>$1</code>');
+        return s;
+      };
+
+      for (let i = 0; i < lines.length; i++) {
+        const raw = lines[i];
+
+        // ── Fenced code block ──────────────────────────────────────────────────
+        if (!inFence && /^```/.test(raw)) {
+          closeLists();
+          inFence   = true;
+          fenceLang = raw.slice(3).trim();
+          fenceBuf  = [];
+          continue;
+        }
+        if (inFence) {
+          if (/^```/.test(raw)) {
+            const langLabel = fenceLang
+              ? `<span style="font-size:10px;color:#8b949e;float:right;margin-top:-2px">${esc(fenceLang)}</span>`
+              : '';
+            out.push(`<div class="code-block">${langLabel}${esc(fenceBuf.join('\n'))}</div>`);
+            inFence = false; fenceLang = ''; fenceBuf = [];
+          } else {
+            fenceBuf.push(raw);
+          }
+          continue;
+        }
+
+        // ── Headings ──────────────────────────────────────────────────────────
+        const hMatch = raw.match(/^(#{1,4})\s+(.+)/);
+        if (hMatch) {
+          closeLists();
+          const level = Math.min(hMatch[1].length + 2, 6); // h3–h6
+          out.push(`<h${level} style="font-size:${16 - level}px;color:#e6edf3;margin:12px 0 4px;font-weight:600">${inlineEsc(hMatch[2])}</h${level}>`);
+          continue;
+        }
+
+        // ── Horizontal rule ────────────────────────────────────────────────────
+        if (/^---+$/.test(raw.trim())) {
+          closeLists();
+          out.push('<hr style="border:none;border-top:1px solid #30363d;margin:12px 0">');
+          continue;
+        }
+
+        // ── Unordered list ─────────────────────────────────────────────────────
+        const ulMatch = raw.match(/^(\s*)[-*]\s+(.*)/);
+        if (ulMatch) {
+          if (inOList) { out.push('</ol>'); inOList = false; }
+          if (!inList) { out.push('<ul>'); inList = true; }
+          out.push(`<li>${inlineEsc(ulMatch[2])}</li>`);
+          continue;
+        }
+
+        // ── Ordered list ───────────────────────────────────────────────────────
+        const olMatch = raw.match(/^\d+\.\s+(.*)/);
+        if (olMatch) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          if (!inOList) { out.push('<ol>'); inOList = true; }
+          out.push(`<li>${inlineEsc(olMatch[1])}</li>`);
+          continue;
+        }
+
+        // ── Blank line ─────────────────────────────────────────────────────────
+        if (!raw.trim()) {
+          closeLists();
+          continue;
+        }
+
+        // ── Plain paragraph line ───────────────────────────────────────────────
+        closeLists();
+        out.push(`<p>${inlineEsc(raw)}</p>`);
+      }
+
+      closeLists();
+      return out.join('\n');
+    }
+
+    /* ── Badge / pill helpers ────────────────────────────────────────────────── */
+
+    function badge(text) {
+      const t = text.toLowerCase();
+      if (t.includes('none identified') || t.includes('coverage appears') || t.includes('no test') && t.includes('required'))
+        return '<span class="badge badge-ok">Clear</span>';
+      if (t.includes('missing') || t.includes('⚠️') || t.includes('possible') || t.includes('coverage gap'))
+        return '<span class="badge badge-warn">Warning</span>';
+      if (t.includes('none') || t.includes('✅'))
+        return '<span class="badge badge-ok">Clear</span>';
+      return '<span class="badge badge-danger">Review</span>';
+    }
+
+    function assessmentPill(text) {
+      if (/approve/i.test(text) && !/request/i.test(text))
+        return '<span class="assessment-pill pill-approve">Approve</span>';
+      if (/request changes/i.test(text))
+        return '<span class="assessment-pill pill-changes">Request Changes</span>';
+      return '<span class="assessment-pill pill-discuss">Needs Discussion</span>';
+    }
+
+    /* ── Suggestions renderer ────────────────────────────────────────────────── */
+    // Each bullet may contain a **Code Fix:** fenced block underneath it.
+
+    function renderSuggestions(text) {
+      if (!text.trim()) return '<p style="color:#8b949e">No suggestions recorded for this PR.</p>';
+
+      const rawItems = text.split(/\n(?=- )/);
+
+      return rawItems.map(item => {
+        const codeFixIdx = item.indexOf('**Code Fix:**');
+        let bulletText = item;
+        let codeFix    = null;
+
+        if (codeFixIdx > -1) {
+          bulletText = item.slice(0, codeFixIdx).trim();
+          const after      = item.slice(codeFixIdx + '**Code Fix:**'.length);
+          const fenceMatch = after.match(/```([\w]*)\n?([\s\S]*?)```/);
+          if (fenceMatch) {
+            codeFix = { lang: fenceMatch[1], code: fenceMatch[2].replace(/^ {2}/gm, '').trimEnd() };
+          }
+        }
+
+        // Render bullet text through the inline processor (strip leading "- ")
+        const cleanText = bulletText.replace(/^[-*]\s*/, '').trim();
+        const textHtml  = `<span class="suggestion-text">${mdToHtml(cleanText)}</span>`;
+
+        const fixHtml = codeFix
+          ? `<div class="code-fix-label">Code Fix${codeFix.lang ? ' · ' + esc(codeFix.lang) : ''}</div><div class="code-block">${esc(codeFix.code)}</div>`
+          : '';
+
+        const suggIdx = rawItems.indexOf(item);
+        const voteHtml = voteBar(`suggestions-${suggIdx}`);
+
+        return `<div class="suggestion-item">${textHtml}${fixHtml}${voteHtml}</div>`;
+      }).join('');
+    }
+
+    /* ── Vote helpers ────────────────────────────────────────────────────────── */
+
+    // Current PR number (set when a review loads)
+    let currentPR = '';
+
+    // Render a vote bar for a given section key
+    function voteBar(sectionKey) {
+      return `<div class="vote-bar">
+        <button class="vote-btn" id="v-up-${sectionKey}"
+          onclick="castVote('${sectionKey}', 'up')">👍 Useful</button>
+        <button class="vote-btn" id="v-down-${sectionKey}"
+          onclick="castVote('${sectionKey}', 'down')">👎 Not useful</button>
+        <span class="vote-tally" id="v-tally-${sectionKey}"></span>
+      </div>`;
+    }
+
+    async function castVote(sectionKey, vote) {
+      if (!currentPR) return;
+
+      // Optimistic UI — highlight immediately
+      const upBtn   = document.getElementById(`v-up-${sectionKey}`);
+      const downBtn = document.getElementById(`v-down-${sectionKey}`);
+      const tally   = document.getElementById(`v-tally-${sectionKey}`);
+      if (!upBtn) return;
+
+      // Remove previous vote highlight on both
+      upBtn.classList.remove('voted-up', 'voted-down');
+      downBtn.classList.remove('voted-up', 'voted-down');
+      if (vote === 'up')   upBtn.classList.add('voted-up');
+      else               downBtn.classList.add('voted-down');
+
+      try {
+        const res  = await fetch('/api/vote', {
+          method : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body   : JSON.stringify({ pr: currentPR, section: sectionKey, vote }),
+        });
+        const data = await res.json();
+        if (data.tally && tally) {
+          tally.textContent = `${data.tally.up} · ${data.tally.down}`;
+        }
+      } catch (e) {
+        console.warn('Vote failed:', e.message);
+      }
+    }
+
+    /* ── Copy helper ─────────────────────────────────────────────────────────── */
+
+    // Holds the raw markdown for the current review
+    let currentMarkdown = '';
+
+    async function copyReview() {
+      if (!currentMarkdown) return;
+      const btn = document.getElementById('copy-btn');
+      try {
+        await navigator.clipboard.writeText(currentMarkdown);
+        btn.textContent = '✓ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '⎘ Copy';
+          btn.classList.remove('copied');
+        }, 2000);
+      } catch {
+        btn.textContent = 'Failed';
+        setTimeout(() => { btn.textContent = '⎘ Copy'; }, 2000);
+      }
+    }
+
+    /* ── Tab switching ───────────────────────────────────────────────────────── */
+
+    function switchTab(name, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+    }
+
+    /* ── Main render ─────────────────────────────────────────────────────────── */
+
+    function renderReview(md, cached, pr) {
+      const lines      = md.split('\n');
+      const title      = parseMeta(lines, 'Title');
+      const author     = parseMeta(lines, 'Author');
+      const baseHead   = parseMeta(lines, 'Base → Head');
+      const prUrl      = parseMeta(lines, 'URL');
+      const summary    = getSection(md, 'Summary');
+      const security   = getSection(md, 'Security Risks');
+      const tests      = getSection(md, 'Missing Tests');
+      const breaking   = getSection(md, 'Breaking Changes');
+      const suggested  = getSection(md, 'Suggested Improvements');
+      const assessment = getSection(md, 'Overall Assessment');
+
+      // Files-changed <details> block (pass through as-is, it's already HTML in cached files)
+      const filesMatch = md.match(/<details>[\s\S]*?<\/details>/);
+      const filesBlock = filesMatch ? filesMatch[0] : '';
+
+      // Strip the <details> block from summary text before rendering,
+      // so it doesn't appear as raw HTML inside the summary box.
+      const summaryText = summary.replace(/<details>[\s\S]*?<\/details>/g, '').trim();
+
+      // Store for copy button and votes
+      currentPR       = pr;
+      currentMarkdown = md;
+
+      // ── Meta row (above tabs) ──────────────────────────────────────────────
+      const cachedPill = cached
+        ? '<span class="cached-pill">cached</span>'
+        : '<span class="cached-pill" style="background:#0d2c1a;color:#3fb950;border-color:#238636">live review</span>';
+
+      const metaHtml = `
+        <div class="review-meta">
+          ${title    ? `<span><strong>${esc(title)}</strong></span>` : ''}
+          ${author   ? `<span>by <strong>${esc(author)}</strong></span>` : ''}
+          ${baseHead ? `<span style="font-family:monospace;font-size:12px;color:#8b949e">${esc(baseHead)}</span>` : ''}
+          ${prUrl    ? `<span><a href="${esc(prUrl)}" target="_blank" rel="noopener">Open on GitHub ↗</a></span>` : ''}
+          ${cachedPill}
+          <button class="copy-btn" id="copy-btn" onclick="copyReview()">⎘ Copy</button>
+        </div>`;
+
+      // ── Tab 1: Review ──────────────────────────────────────────────────────
+      const reviewHtml = `
+        ${summaryText ? `<div class="section">
+          <div class="section-header"><h3>Summary</h3></div>
+          <div class="section-body">
+            <div class="summary-box">${mdToHtml(summaryText)}</div>
+            ${filesBlock}
+          </div>
+        </div>` : ''}
+
+        <div class="section">
+          <div class="section-header"><h3>Security Risks</h3>${badge(security)}</div>
+          <div class="section-body">${mdToHtml(security)}</div>
+          ${voteBar('security')}
+        </div>
+
+        <div class="section">
+          <div class="section-header"><h3>Missing Tests</h3>${badge(tests)}</div>
+          <div class="section-body">${mdToHtml(tests)}</div>
+          ${voteBar('tests')}
+        </div>
+
+        <div class="section">
+          <div class="section-header"><h3>Breaking Changes</h3>${badge(breaking)}</div>
+          <div class="section-body">${mdToHtml(breaking)}</div>
+          ${voteBar('breaking')}
+        </div>
+
+        <div class="section">
+          <div class="section-header"><h3>Overall Assessment</h3></div>
+          <div class="section-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            ${assessmentPill(assessment)}
+            <span style="font-size:14px;color:#c9d1d9">${mdToHtml(assessment.replace(/^\*\*[^*]+\*\*\s*[—–-]\s*/, ''))}</span>
+          </div>
+        </div>`;
+
+      // ── Tab 2: Code Suggestions ────────────────────────────────────────────
+      const suggestionsHtml = `
+        <div class="section">
+          <div class="section-header"><h3>Suggested Improvements</h3></div>
+          <div class="section-body">${renderSuggestions(suggested)}</div>
+        </div>`;
+
+      // Inject into DOM
+      document.getElementById('resultsBody').innerHTML = metaHtml;
+      document.getElementById('tabReview').innerHTML      = reviewHtml;
+      document.getElementById('tabSuggestions').innerHTML = suggestionsHtml;
+
+      // Show tab bar, reset to Review tab
+      document.getElementById('tabBar').style.display = '';
+      document.querySelectorAll('.tab-btn').forEach((b, i)  => b.classList.toggle('active', i === 0));
+      document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === 0));
+    }
+
+    /* ── Run ─────────────────────────────────────────────────────────────────── */
+
+    async function runReview() {
+      const input   = document.getElementById('prInput').value.trim();
+      const btn     = document.getElementById('reviewBtn');
+      const results = document.getElementById('results');
+      const body    = document.getElementById('resultsBody');
+
+      if (!input) return;
+
+      btn.disabled    = true;
+      btn.textContent = 'Reviewing…';
+      results.classList.add('visible');
+      document.getElementById('tabBar').style.display   = 'none';
+      document.getElementById('tabReview').innerHTML    = '';
+      document.getElementById('tabSuggestions').innerHTML = '';
+      body.innerHTML = `<div class="status-bar"><div class="spinner"></div><span>Fetching review…</span></div>`;
+
+      try {
+        const res  = await fetch(`${API}?pr=${encodeURIComponent(input)}`);
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+          body.innerHTML = `<div class="error-msg">${esc(data.error || 'Unknown server error.')}</div>`;
+          document.getElementById('tabBar').style.display = 'none';
+        } else {
+          renderReview(data.markdown, data.cached, data.pr);
+        }
+      } catch (e) {
+        body.innerHTML = `<div class="error-msg">Could not reach the review server. Make sure <code>node server.cjs</code> is running on port 3000.</div>`;
+      }
+
+      btn.disabled    = false;
+      btn.textContent = 'Review';
+    }
+
+    document.getElementById('prInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') runReview();
+    });
+  </script>
+
+</body>
+</html>
